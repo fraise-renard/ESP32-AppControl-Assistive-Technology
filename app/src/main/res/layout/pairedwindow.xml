@@ -31,8 +31,9 @@
         android:layout_marginStart="3dp"
         android:layout_marginTop="117dp"
         android:backgroundTint="#0F5CA9"
-        android:text="@string/capture"
-        android:textSize="34sp"
+        android:text="CAPTURAR"
+        android:textSize="40sp"
+        android:textStyle="bold"
         app:cornerRadius="0dp"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintHorizontal_bias="0.5"
@@ -67,22 +68,5 @@
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
         app:layout_constraintTop_toTopOf="parent" />
-
-    <ImageButton
-        android:id="@+id/closebtn"
-        android:layout_width="92dp"
-        android:layout_height="85dp"
-        android:layout_marginTop="8dp"
-        android:layout_marginBottom="688dp"
-        android:backgroundTint="#0F5CA9"
-        android:contentDescription='Close'
-        android:scaleType="fitStart"
-        android:scrollY="4px"
-        android:translationY="10px"
-        app:layout_constraintBottom_toBottomOf="parent"
-        app:layout_constraintEnd_toEndOf="parent"
-        app:layout_constraintTop_toTopOf="parent"
-        app:layout_constraintVertical_bias="0.0"
-        app:srcCompat="@android:drawable/btn_dialog" />
 
 </androidx.constraintlayout.widget.ConstraintLayout>

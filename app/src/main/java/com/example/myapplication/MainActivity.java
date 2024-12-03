@@ -15,10 +15,10 @@ import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.speech.tts.TextToSpeech;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.widget.Button;
-import android.widget.ImageButton;
 import android.widget.ImageView;
 import android.widget.TextView;
 import android.widget.Toast;
@@ -28,9 +28,11 @@ import androidx.annotation.RequiresPermission;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.app.ActivityCompat;
 import androidx.core.content.ContextCompat;
+
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Locale;
 import java.util.UUID;
 
 
@@ -42,8 +44,12 @@ public class MainActivity extends AppCompatActivity {
     Button captureButton = null, searchButton = null;
     ImageView imageView = null;
     TextView imageDesc = null;
+    AlertDialog alertDialog = null;
+    TextToSpeech tts = null;
+    boolean paired = false;
     private Handler mainHandler;
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
+
 
     private final BroadcastReceiver bluetoothReceiver = new BroadcastReceiver() {
         @Override
@@ -51,9 +57,13 @@ public class MainActivity extends AppCompatActivity {
             String action = intent.getAction();
             if (BluetoothAdapter.ACTION_DISCOVERY_STARTED.equals(action)) {
                 searchButton.setText("Procurando...");
+                speakOutLoud("Procurando");
                 searchButton.setEnabled(false);
             } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
                 searchButton.setText("Procurar");
+                if(!paired) {
+                    speakOutLoud("Procurar");
+                }
                 searchButton.setEnabled(true);
 
             } else if (BluetoothDevice.ACTION_FOUND.equals(action)) {
@@ -63,7 +73,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 if (device != null && "ESP32-CAM".equals(device.getName())) {
                     Toast.makeText(getApplicationContext(), "Found ESP32-CAM", Toast.LENGTH_SHORT).show();
-
+                    paired = true;
                     // Cancel discovery to save resources
                     if (ActivityCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
                         return;
@@ -76,6 +86,11 @@ public class MainActivity extends AppCompatActivity {
             }
         }
     };
+
+    private void speakOutLoud(String text) {
+        // Speak out loud without needing a new Activity
+        tts.speak(text, TextToSpeech.QUEUE_FLUSH, null, null);
+    }
 
     private void sendMessage(String message) {
         try {
@@ -96,14 +111,47 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    public void updateImageDescription(String desc){
+    public void updateImageDescription(String desc) {
+        // First, update the UI with the description text
         imageDesc.setVisibility(View.VISIBLE);
         imageDesc.setText(desc);
+
+        // Start TTS to speak the description
+        speakOutLoud(desc);
+
+        // Run the checking of TTS status in a background thread to avoid blocking the UI
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                // Wait for TTS to finish speaking
+                while (tts.isSpeaking()) {
+                    try {
+                        Thread.sleep(100);  // Sleep for a short period to prevent busy-waiting
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+
+                // Once speaking is done, dismiss the AlertDialog on the main thread
+                runOnUiThread(new Runnable() {
+                    @Override
+                    public void run() {
+                        if (alertDialog != null && alertDialog.isShowing()) {
+                            alertDialog.dismiss();  // Close the AlertDialog
+                            speakOutLoud("Procurar");
+                            paired = false;
+                        }
+                    }
+                });
+            }
+        }).start();
     }
 
-    public void updateCaptureButton(String text){
+
+    public void updateCaptureButton(String text) {
         captureButton.setClickable(false);
         captureButton.setText(text);
+        speakOutLoud("Carregando");
     }
 
     private void catchImage() throws Exception {
@@ -121,7 +169,7 @@ public class MainActivity extends AppCompatActivity {
             // Continuously read data from the input stream
             while ((bytes = inputStream.read(buffer)) != -1) {
                 String receivedMessage = new String(buffer, 0, bytes).trim();
-                if(receivedMessage.equals("Connected")){
+                if (receivedMessage.equals("Connected")) {
                     Toast.makeText(MainActivity.this, "ESP32 is " + receivedMessage, Toast.LENGTH_SHORT).show();
                     break;
                 }
@@ -136,10 +184,10 @@ public class MainActivity extends AppCompatActivity {
 
     //Bluetooth Socket
     @RequiresPermission(Manifest.permission.BLUETOOTH_CONNECT)
-    private void connectToDevice(BluetoothDevice device){
+    private void connectToDevice(BluetoothDevice device) {
         try {
             Toast.makeText(this, "Trying to establish BT socket...", Toast.LENGTH_SHORT).show();
-            if(bluetoothSocket == null){
+            if (bluetoothSocket == null) {
                 bluetoothSocket = device.createRfcommSocketToServiceRecord(SPP_UUID);
                 bluetoothSocket.connect();
             }
@@ -150,7 +198,7 @@ public class MainActivity extends AppCompatActivity {
             listenTest();
             showPairedWindow();
 
-        }catch(IOException e){
+        } catch (IOException e) {
             Toast.makeText(this, "BT socket error", Toast.LENGTH_SHORT).show();
         }
     }
@@ -159,13 +207,13 @@ public class MainActivity extends AppCompatActivity {
         // Create the dialog
         LayoutInflater inflater = getLayoutInflater();
         View dialogView = inflater.inflate(R.layout.pairedwindow, null);
-        AlertDialog alertDialog = new AlertDialog.Builder(this)
+        alertDialog = new AlertDialog.Builder(this)
                 .setView(dialogView)
                 .create();
 
         //Shutter button
         captureButton = dialogView.findViewById(R.id.capturebutton);
-
+        speakOutLoud("Capturar");
         imageView = dialogView.findViewById(R.id.imageView);
         imageDesc = dialogView.findViewById(R.id.img_description);
         captureButton.setOnClickListener(new View.OnClickListener() {
@@ -176,15 +224,6 @@ public class MainActivity extends AppCompatActivity {
                 } catch (Exception e) {
                     throw new RuntimeException(e);
                 }
-            }
-        });
-
-        // Find the close button in the dialog layout
-        ImageButton closeButton = dialogView.findViewById(R.id.closebtn);
-        closeButton.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View v) {
-                alertDialog.dismiss(); // Close the dialog
             }
         });
 
@@ -204,7 +243,16 @@ public class MainActivity extends AppCompatActivity {
                 || ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADMIN, Manifest.permission.BLUETOOTH}, 1);
         }
-
+        tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
+            @Override
+            public void onInit(int status) {
+                if (status == TextToSpeech.SUCCESS) {
+                    // Set language to Portuguese
+                    int langResult = tts.setLanguage(new Locale("pt", "BR"));
+                    speakOutLoud("Procurar");
+                }
+            }
+        });
         mainHandler = new Handler(Looper.getMainLooper());
         searchButton = findViewById(R.id.btn);
 
@@ -228,11 +276,19 @@ public class MainActivity extends AppCompatActivity {
         registerReceiver(bluetoothReceiver, filter);
 
         // Set up button click listener to start discovery
-        searchButton.setOnClickListener(v -> bluetoothAdapter.startDiscovery());
-
+        searchButton.setOnClickListener(new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+                if (ActivityCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
+                    return;
+                }
+                bluetoothAdapter.startDiscovery();
+            }
+        });
     }
 
     protected void onDestroy() {
+        tts.shutdown();
         super.onDestroy();
         unregisterReceiver(bluetoothReceiver);
         try {

@@ -22,6 +22,7 @@ public class BluetoothImageReceiver extends Thread {
     private final BufferedInputStream bufferedInputStream;
     private ClarifaiApiClient clarifai = null;
     private String concept = null;
+    private int distance = 0;
 
     public BluetoothImageReceiver(BluetoothSocket socket, Handler mainHandler, Context context) {
         InputStream tempIn = null;
@@ -43,7 +44,7 @@ public class BluetoothImageReceiver extends Thread {
             public void run() {
                 if (context instanceof MainActivity) {
                     // Call the updateImageView method in the MainActivity
-                    ((MainActivity) context).updateCaptureButton("CAPTURING...");
+                    ((MainActivity) context).updateCaptureButton("CARREGANDO...");
                 } else {
                     Log.e("BluetoothThread", "Context is not an instance of MainActivity.");
                 }
@@ -53,10 +54,24 @@ public class BluetoothImageReceiver extends Thread {
         try {
             currentThread().setPriority(Thread.MAX_PRIORITY);
 
+            // Step 0: Read the 1-byte distance
+            byte[] distanceBuffer = new byte[1];  // 1 byte for the distance
+            int bytesReadDistance = inputStream.read(distanceBuffer); // Reads the first byte for distance
+            if (bytesReadDistance != 1) {
+                Log.e("BluetoothThread", "Failed to read distance byte.");
+                return;
+            }
+
+            // Convert the distance byte to an integer
+            distance = Byte.toUnsignedInt(distanceBuffer[0]);  // Convert byte to unsigned int (0-200)
+
+            // Log the distance value
+            Log.d("BluetoothThread", "Distance received: " + distance + " cm");
+
             // Step 1: Read the 4-byte image size
             byte[] sizeBuffer = new byte[4];
-            int bytesRead = inputStream.read(sizeBuffer); // Reads the first 4 bytes
-            if (bytesRead != 4) {
+            int bytesReadSize = inputStream.read(sizeBuffer); // Reads the first 4 bytes for image size
+            if (bytesReadSize != 4) {
                 Log.e("BluetoothThread", "Failed to read image size metadata.");
                 return;
             }
@@ -66,7 +81,9 @@ public class BluetoothImageReceiver extends Thread {
                     .order(ByteOrder.LITTLE_ENDIAN)
                     .getInt();
 
+            // Log the image size
             Log.d("BluetoothThread", "Image size received: " + imageSize + " bytes");
+
 
             // Step 2: Read image data
             ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
@@ -143,7 +160,7 @@ public class BluetoothImageReceiver extends Thread {
 
                     // Classify image using Clarifai API
                     try {
-                        concept = clarifai.classifyImage(imageData);
+                        concept = clarifai.detectCentralObject(imageData);
                     } catch (Exception e) {
                         throw new RuntimeException(e);
                     }
@@ -158,7 +175,7 @@ public class BluetoothImageReceiver extends Thread {
                         mainHandler.post(() -> {
                             if (context instanceof MainActivity) {
                                 // Call the updateImageView method in the MainActivity
-                                ((MainActivity) context).updateImageDescription(concept);
+                                ((MainActivity) context).updateImageDescription(concept + " a " + distance + "cm de distância");
                             } else {
                                 Log.e("BluetoothThread", "Context is not an instance of MainActivity.");
                             }
