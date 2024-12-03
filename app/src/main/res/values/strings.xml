@@ -1,0 +1,5 @@
+<resources>
+    <string name="app_name">Esp32Control</string>
+    <string name="capture">CAPTURE</string>
+    <string name="processando_imagem">Processando imagem...</string>
+</resources>

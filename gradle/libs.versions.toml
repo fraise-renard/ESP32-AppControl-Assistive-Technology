@@ -1,0 +1,25 @@
+[versions]
+agp = "8.5.2"
+grpc = "1.68.1"
+libretranslateJava = "1.0.7"
+libretranslateJavaVersion = "1.0.7"
+okhttp = "5.0.0-alpha.2"
+
+[libraries]
+clarifai-grpc = { module = "com.clarifai:clarifai-grpc", version = "10.5.2" }
+junit = { group = "junit", name = "junit", version = "4.13.2" }
+ext-junit = { group = "androidx.test.ext", name = "junit", version = "1.2.1" }
+espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version = "3.6.1" }
+appcompat = { group = "androidx.appcompat", name = "appcompat", version = "1.7.0" }
+libretranslate-java = { module = "net.clojars.dulouser:libretranslate-java", version.ref = "libretranslateJavaVersion" }
+material = { group = "com.google.android.material", name = "material", version = "1.12.0" }
+activity = { group = "androidx.activity", name = "activity", version = "1.9.3" }
+constraintlayout = { group = "androidx.constraintlayout", name = "constraintlayout", version = "2.2.0" }
+grpc-okhttp = { module = "io.grpc:grpc-okhttp", version.ref = "grpc" }
+grpc-protobuf = { module = "io.grpc:grpc-protobuf", version.ref = "grpc" }
+grpc-stub = { module = "io.grpc:grpc-stub", version.ref = "grpc" }
+okhttp = {module = "com.squareup.okhttp3:okhttp", version.ref = "okhttp"}
+
+[plugins]
+android-application = { id = "com.android.application", version.ref = "agp" }
+
