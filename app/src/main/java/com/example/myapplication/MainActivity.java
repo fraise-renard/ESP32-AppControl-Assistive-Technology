@@ -46,7 +46,6 @@ public class MainActivity extends AppCompatActivity {
     TextView imageDesc = null;
     AlertDialog alertDialog = null;
     TextToSpeech tts = null;
-    boolean paired = false;
     private Handler mainHandler;
     private static final UUID SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
 
@@ -60,11 +59,11 @@ public class MainActivity extends AppCompatActivity {
                 speakOutLoud("Procurando");
                 searchButton.setEnabled(false);
             } else if (BluetoothAdapter.ACTION_DISCOVERY_FINISHED.equals(action)) {
-                searchButton.setText("Procurar");
-                if(!paired) {
+                if(searchButton.getVisibility() == View.VISIBLE) {
+                    searchButton.setText("Procurar");
                     speakOutLoud("Procurar");
+                    searchButton.setEnabled(true);
                 }
-                searchButton.setEnabled(true);
 
             } else if (BluetoothDevice.ACTION_FOUND.equals(action)) {
                 BluetoothDevice device = intent.getParcelableExtra(BluetoothDevice.EXTRA_DEVICE);
@@ -73,14 +72,11 @@ public class MainActivity extends AppCompatActivity {
                 }
                 if (device != null && "ESP32-CAM".equals(device.getName())) {
                     Toast.makeText(getApplicationContext(), "Found ESP32-CAM", Toast.LENGTH_SHORT).show();
-                    paired = true;
                     // Cancel discovery to save resources
                     if (ActivityCompat.checkSelfPermission(getApplicationContext(), Manifest.permission.BLUETOOTH_SCAN) != PackageManager.PERMISSION_GRANTED) {
                         return;
                     }
                     bluetoothAdapter.cancelDiscovery();
-
-                    // Call the method to connect to the device
                     connectToDevice(device);
                 }
             }
@@ -132,14 +128,13 @@ public class MainActivity extends AppCompatActivity {
                     }
                 }
 
-                // Once speaking is done, dismiss the AlertDialog on the main thread
+                // Once speaking is done, dismiss the AlertDialog on the main thread, spawn a new one
                 runOnUiThread(new Runnable() {
                     @Override
                     public void run() {
                         if (alertDialog != null && alertDialog.isShowing()) {
                             alertDialog.dismiss();  // Close the AlertDialog
-                            speakOutLoud("Procurar");
-                            paired = false;
+                            showPairedWindow();
                         }
                     }
                 });
@@ -197,6 +192,7 @@ public class MainActivity extends AppCompatActivity {
             sendMessage("Test");
             listenTest();
             showPairedWindow();
+            searchButton.setVisibility(View.INVISIBLE);
 
         } catch (IOException e) {
             Toast.makeText(this, "BT socket error", Toast.LENGTH_SHORT).show();
@@ -243,6 +239,7 @@ public class MainActivity extends AppCompatActivity {
                 || ContextCompat.checkSelfPermission(this, Manifest.permission.BLUETOOTH) != PackageManager.PERMISSION_GRANTED) {
             ActivityCompat.requestPermissions(this, new String[]{Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.BLUETOOTH_SCAN, Manifest.permission.BLUETOOTH_CONNECT, Manifest.permission.BLUETOOTH_ADMIN, Manifest.permission.BLUETOOTH}, 1);
         }
+
         tts = new TextToSpeech(this, new TextToSpeech.OnInitListener() {
             @Override
             public void onInit(int status) {

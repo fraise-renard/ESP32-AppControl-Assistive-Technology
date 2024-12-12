@@ -38,6 +38,7 @@ public class ClarifaiApiClient {
                 .withCallCredentials(new ClarifaiCallCredentials(PAT));
     }
 
+    //if one of the concepts is person or face, priorize it, if it's central.
     public String detectCentralObject(byte[] imageBytes) throws Exception {
         PostModelOutputsRequest request = PostModelOutputsRequest.newBuilder()
                 .setUserAppId(UserAppIDSet.newBuilder().setUserId(USER_ID).setAppId(APP_ID))
@@ -56,36 +57,48 @@ public class ClarifaiApiClient {
             throw new RuntimeException("Request failed, status: " + response.getStatus());
         }
 
-        // Variables to track the most central bounding box
-        Concept centralConcept = null;
-        float smallestDistanceToCenter = Float.MAX_VALUE;
+        // Variables to track the best bounding box based on centrality and size
+        Concept mainConcept = null;
+        float bestScore = Float.MAX_VALUE; // Lower is better for distance and area combination
 
         for (Region region : response.getOutputs(0).getData().getRegionsList()) {
             BoundingBox bbox = region.getRegionInfo().getBoundingBox();
-            Concept concept = region.getData().getConcepts(0); // Assume the first concept is the main one
 
-            // Calculate the center of the bounding box using getLeftCol, getRightCol, getTopRow, getBottomRow
+            // Calculate the center of the bounding box
             float bboxCenterX = (bbox.getLeftCol() + bbox.getRightCol()) / 2;
             float bboxCenterY = (bbox.getTopRow() + bbox.getBottomRow()) / 2;
 
-            // Calculate distance from image center (normalized coordinates)
-            //Euclidean formula of distance
-            //0.5,0.5 is always the center of the image
+            // Calculate the area of the bounding box
+            float bboxWidth = bbox.getRightCol() - bbox.getLeftCol();
+            float bboxHeight = bbox.getBottomRow() - bbox.getTopRow();
+            float bboxArea = bboxWidth * bboxHeight;
+
+            // Calculate distance from the image center (normalized coordinates)
             float distanceToCenter = (float) Math.sqrt(
                     Math.pow(0.5 - bboxCenterX, 2) + Math.pow(0.5 - bboxCenterY, 2)
             );
 
-            // Update the most central concept if this one is closer to the center
-            if (distanceToCenter < smallestDistanceToCenter) {
-                smallestDistanceToCenter = distanceToCenter;
-                centralConcept = concept;
+            // Calculate a score: prioritize small distance and large area
+            // A smaller score is better. Here we use (distance / bboxArea) to weigh the area higher.
+            float score = distanceToCenter / bboxArea;
+
+            // Update the main concept if this box has a better score
+            if (score < bestScore) {
+                bestScore = score;
+                float highestValue = 0;
+                for(Concept c : region.getData().getConceptsList()){
+                    if(c.getValue() > highestValue){
+                        highestValue = c.getValue();
+                        mainConcept = c;
+                    }
+                }
             }
         }
 
-        if (centralConcept != null) {
-            return capitalizeFirstCharacter(Translator.translate("en", "pt", centralConcept.getName()));
+        if (mainConcept != null) {
+            return capitalizeFirstCharacter(Translator.translate("en", "pt", mainConcept.getName()));
         } else {
-            return "Objeto central desconhecido";
+            return "Objeto principal desconhecido";
         }
     }
 
