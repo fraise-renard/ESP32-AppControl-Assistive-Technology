@@ -1,14 +1,15 @@
 package com.example.myapplication;
+
 import android.bluetooth.BluetoothSocket;
 import android.content.Context;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
 import android.os.Handler;
 import android.util.Log;
+
 import java.io.BufferedInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
-import java.io.InputStream;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.concurrent.CountDownLatch;
@@ -16,7 +17,6 @@ import java.util.concurrent.CountDownLatch;
 
 //DATENA: ME DE IBAGENS, ME DE IBAGENS!!
 public class BluetoothImageReceiver extends Thread {
-    private final InputStream inputStream;
     private Handler mainHandler;
     private Context context;
     private final BufferedInputStream bufferedInputStream;
@@ -24,17 +24,11 @@ public class BluetoothImageReceiver extends Thread {
     private String concept = null;
     private int distance = 0;
 
-    public BluetoothImageReceiver(BluetoothSocket socket, Handler mainHandler, Context context) {
-        InputStream tempIn = null;
-        try {
-            tempIn = socket.getInputStream();
-        } catch (Exception e) {
-            e.printStackTrace();
-        }
-        this.inputStream = tempIn;
+    public BluetoothImageReceiver(BluetoothSocket socket, Handler mainHandler, Context context) throws IOException {
+        this.bufferedInputStream = new BufferedInputStream(socket.getInputStream());
         this.mainHandler = mainHandler;
         this.context = context;
-        this.bufferedInputStream = new BufferedInputStream(inputStream);
+
     }
 
     @Override
@@ -56,7 +50,7 @@ public class BluetoothImageReceiver extends Thread {
 
             // Step 0: Read the 1-byte distance
             byte[] distanceBuffer = new byte[1];  // 1 byte for the distance
-            int bytesReadDistance = inputStream.read(distanceBuffer); // Reads the first byte for distance
+            int bytesReadDistance = bufferedInputStream.read(distanceBuffer); // Reads the first byte for distance
             if (bytesReadDistance != 1) {
                 Log.e("BluetoothThread", "Failed to read distance byte.");
                 return;
@@ -70,7 +64,7 @@ public class BluetoothImageReceiver extends Thread {
 
             // Step 1: Read the 4-byte image size
             byte[] sizeBuffer = new byte[4];
-            int bytesReadSize = inputStream.read(sizeBuffer); // Reads the first 4 bytes for image size
+            int bytesReadSize = bufferedInputStream.read(sizeBuffer); // Reads the first 4 bytes for image size
             if (bytesReadSize != 4) {
                 Log.e("BluetoothThread", "Failed to read image size metadata.");
                 return;
@@ -98,11 +92,11 @@ public class BluetoothImageReceiver extends Thread {
                     break;
                 }
 
-                int availableBytes = inputStream.available();
+                int availableBytes = bufferedInputStream.available();
                 if (availableBytes > 0) {
                     // Calculate the chunk size to read
                     int bytesToRead = Math.min(availableBytes, imageSize - totalBytesRead);
-                    int bytesReadInChunk = inputStream.read(buffer, 0, bytesToRead);
+                    int bytesReadInChunk = bufferedInputStream.read(buffer, 0, bytesToRead);
 
                     if (bytesReadInChunk == -1) {
                         Log.e("BluetoothReceiver", "End of stream reached unexpectedly.");

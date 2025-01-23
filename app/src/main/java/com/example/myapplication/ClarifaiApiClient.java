@@ -6,15 +6,21 @@ import com.clarifai.grpc.api.Concept;
 import com.clarifai.grpc.api.Data;
 import com.clarifai.grpc.api.Image;
 import com.clarifai.grpc.api.Input;
-import com.clarifai.grpc.api.MultiOutputResponse;
-import com.clarifai.grpc.api.PostModelOutputsRequest;
+import com.clarifai.grpc.api.Output;
+import com.clarifai.grpc.api.PostWorkflowResultsRequest;
+import com.clarifai.grpc.api.PostWorkflowResultsResponse;
 import com.clarifai.grpc.api.Region;
 import com.clarifai.grpc.api.UserAppIDSet;
 import com.clarifai.grpc.api.V2Grpc;
+import com.clarifai.grpc.api.WorkflowResult;
 import com.clarifai.grpc.api.status.StatusCode;
 import com.google.protobuf.ByteString;
 
+import net.suuft.libretranslate.Language;
 import net.suuft.libretranslate.Translator;
+
+import java.util.HashSet;
+import java.util.Set;
 
 import io.grpc.ManagedChannel;
 import io.grpc.okhttp.OkHttpChannelBuilder;
@@ -24,11 +30,19 @@ public class ClarifaiApiClient {
     private static final String PAT = "eea9f30ee77847a7a74b2ca886f85888"; // Replace with your actual PAT
     private static final String USER_ID = "tac-tcc"; // Replace with your user ID
     private static final String APP_ID = "TAC"; // Replace with your app ID
-    private static final String MODEL_ID = "general-image-detection"; // Object detection model ID
-
+    private static final String WORKFLOW_ID = "interpreter"; // Object detection model ID
+    // Priority object concepts
+    private static final Set<String> PRIORITY_OBJECTS = new HashSet<>();
     private final V2Grpc.V2BlockingStub stub;
 
     public ClarifaiApiClient() {
+        PRIORITY_OBJECTS.add("person");
+        PRIORITY_OBJECTS.add("man");
+        PRIORITY_OBJECTS.add("woman");
+        PRIORITY_OBJECTS.add("human");
+        PRIORITY_OBJECTS.add("face");
+        PRIORITY_OBJECTS.add("car");
+
         ManagedChannel channel = OkHttpChannelBuilder
                 .forAddress("api.clarifai.com", 443)
                 .useTransportSecurity()
@@ -38,10 +52,12 @@ public class ClarifaiApiClient {
                 .withCallCredentials(new ClarifaiCallCredentials(PAT));
     }
 
+    //if one of the concepts is person or face, priorize it, if it's central.
     public String detectCentralObject(byte[] imageBytes) throws Exception {
-        PostModelOutputsRequest request = PostModelOutputsRequest.newBuilder()
+        PostWorkflowResultsResponse request = stub.postWorkflowResults(
+                PostWorkflowResultsRequest.newBuilder()
                 .setUserAppId(UserAppIDSet.newBuilder().setUserId(USER_ID).setAppId(APP_ID))
-                .setModelId(MODEL_ID)
+                .setWorkflowId(WORKFLOW_ID)
                 .addInputs(
                         Input.newBuilder().setData(
                                 Data.newBuilder().setImage(
@@ -49,45 +65,70 @@ public class ClarifaiApiClient {
                                 )
                         )
                 )
-                .build();
+                .build());
 
-        MultiOutputResponse response = stub.postModelOutputs(request);
-        if (response.getStatus().getCode() != StatusCode.SUCCESS) {
-            throw new RuntimeException("Request failed, status: " + response.getStatus());
+        if (request.getStatus().getCode() != StatusCode.SUCCESS) {
+            throw new RuntimeException("Request failed, status: " + request.getStatus());
         }
+        // Process the workflow results
+        WorkflowResult result = request.getResults(0);
+        // Variables for text and object selection
+        String bestText = null;
+        float bestTextScore = Float.MAX_VALUE;
 
-        // Variables to track the most central bounding box
-        Concept centralConcept = null;
-        float smallestDistanceToCenter = Float.MAX_VALUE;
+        Region bestRegion = null;
+        float bestObjectScore = Float.MAX_VALUE;
 
-        for (Region region : response.getOutputs(0).getData().getRegionsList()) {
-            BoundingBox bbox = region.getRegionInfo().getBoundingBox();
-            Concept concept = region.getData().getConcepts(0); // Assume the first concept is the main one
+        // Iterate through outputs for each model
+        for (Output output : result.getOutputsList()) {
+            String modelId = output.getModel().getId();
 
-            // Calculate the center of the bounding box using getLeftCol, getRightCol, getTopRow, getBottomRow
-            float bboxCenterX = (bbox.getLeftCol() + bbox.getRightCol()) / 2;
-            float bboxCenterY = (bbox.getTopRow() + bbox.getBottomRow()) / 2;
+            for (Region region : output.getData().getRegionsList()) {
+                BoundingBox bbox = region.getRegionInfo().getBoundingBox();
+                float bboxCenterX = (bbox.getLeftCol() + bbox.getRightCol()) / 2;
+                float bboxCenterY = (bbox.getTopRow() + bbox.getBottomRow()) / 2;
+                float bboxArea = (bbox.getRightCol() - bbox.getLeftCol()) * (bbox.getBottomRow() - bbox.getTopRow());
+                float distanceToCenter = (float) Math.sqrt(Math.pow(0.5 - bboxCenterX, 2) + Math.pow(0.5 - bboxCenterY, 2));
+                float score = distanceToCenter / bboxArea; // Smaller score is better
 
-            // Calculate distance from image center (normalized coordinates)
-            //Euclidean formula of distance
-            //0.5,0.5 is always the center of the image
-            float distanceToCenter = (float) Math.sqrt(
-                    Math.pow(0.5 - bboxCenterX, 2) + Math.pow(0.5 - bboxCenterY, 2)
-            );
-
-            // Update the most central concept if this one is closer to the center
-            if (distanceToCenter < smallestDistanceToCenter) {
-                smallestDistanceToCenter = distanceToCenter;
-                centralConcept = concept;
+                if (modelId.equals("general-image-detection")) {
+                    if (score < bestObjectScore) { // Confidence threshold for objects
+                        bestObjectScore = score;
+                        //sets the most centralized and biggest object region
+                        bestRegion = region;
+                    }
+                }else{
+                    if (score < bestTextScore) {
+                        bestTextScore = score;
+                        bestText = region.getData().getText().getRaw();
+                    }
+                }
             }
         }
 
-        if (centralConcept != null) {
-            return capitalizeFirstCharacter(Translator.translate("en", "pt", centralConcept.getName()));
-        } else {
-            return "Objeto central desconhecido";
+        Concept bestConcept = null;
+        if(bestRegion != null) {
+            for (Concept concept : bestRegion.getData().getConceptsList()) {
+                if (PRIORITY_OBJECTS.contains(concept.getName())) {
+                    bestConcept = concept; //major concept filtering mecanism
+                    break;
+                }else if (concept.getValue() > 0.5) {
+                    bestConcept = concept;
+                }
+            }
         }
+
+        // Decision-making logic
+        if (bestTextScore < bestObjectScore && bestText != null && !bestText.isEmpty() && !bestText.equals(" ")) {
+            return "Texto detectado: '" + bestText + "'";
+        } else if (bestConcept != null) {
+            return capitalizeFirstCharacter(Translator.translate(Language.PORTUGUESE,bestConcept.getName()));
+        } else {
+            return "Objeto desconhecido";
+        }
+
     }
+
 
     private static String capitalizeFirstCharacter(String input) {
         if (input == null || input.isEmpty()) {

@@ -1,5 +1,5 @@
 [versions]
-agp = "8.5.2"
+agp = "8.8.0"
 grpc = "1.68.1"
 libretranslateJava = "1.0.7"
 libretranslateJavaVersion = "1.0.7"
